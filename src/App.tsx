@@ -42,40 +42,53 @@ function App() {
     try {
       setIsLoading(true);
       setApiKeyError(false);
-      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" }); // Updated model name
 
       const prompt = `Generate a detailed packing list based on this trip description: "${input}". 
-        Format the response as a JSON object with this structure:
+        Return ONLY a JSON object (no markdown, no backticks) with this structure:
         {
           "categories": [
             {
               "name": "Category Name",
-              "items": ["Item 1", "Item 2", ...]
+              "items": ["Item 1", "Item 2"]
             }
           ]
-        }
-        Include common categories like Clothing, Toiletries, Electronics, etc.`;
+        }`;
 
       const result = await model.generateContent(prompt);
       const response = await result.response;
-      const text = response.text();
+      let text = response.text();
       
-      // Parse the JSON response
-      const parsedList = JSON.parse(text);
-      setPackingList(parsedList);
-
-      setMessages(prev => [
-        ...prev,
-        { role: 'user', content: input },
-        { role: 'assistant', content: "I've generated a packing list based on your trip details. You can find it below!" }
-      ]);
+      // Clean the response text
+      text = text.replace(/```json\n?|\n?```/g, '').trim();
+      
+      try {
+        const parsedList = JSON.parse(text);
+        setPackingList(parsedList);
+        setMessages(prev => [
+          ...prev,
+          { role: 'user', content: input },
+          { role: 'assistant', content: "I've generated a packing list based on your trip details. You can find it below!" }
+        ]);
+      } catch (jsonError) {
+        console.error('JSON parsing error:', jsonError);
+        setMessages(prev => [
+          ...prev,
+          { role: 'user', content: input },
+          { role: 'assistant', content: "Sorry, I received an invalid response format. Please try again." }
+        ]);
+      }
       
       setInput('');
     } catch (error) {
       console.error('Error generating packing list:', error);
-      const errorMessage = error instanceof Error && error.message.includes('API_KEY_INVALID')
-        ? "Error: Invalid API key. Please check your Gemini API key configuration."
-        : "I'm sorry, I encountered an error while generating your packing list. Please try again.";
+      const errorMessage = error instanceof Error 
+        ? error.message.includes('API_KEY_INVALID')
+          ? "Error: Invalid API key. Please check your Gemini API key configuration."
+          : error.message.includes('RATE_LIMIT_EXCEEDED')
+            ? "Rate limit exceeded. Please try again in a few moments."
+            : "I'm sorry, I encountered an error while generating your packing list. Please try again."
+        : "An unexpected error occurred";
       
       setMessages(prev => [
         ...prev,
@@ -97,8 +110,8 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white">
-      <header className="bg-white shadow-lg border-b border-blue-100">
-        <div className="max-w-4xl mx-auto px-4 py-6">
+      <header className="bg-white border-b border-blue-100 shadow-lg">
+        <div className="max-w-4xl px-4 py-6 mx-auto">
           <div className="flex items-center gap-3">
             <div className="p-3 bg-blue-500 rounded-full">
               <Luggage className="w-6 h-6 text-white" />
@@ -111,31 +124,31 @@ function App() {
         </div>
       </header>
 
-      <main className="flex-1 max-w-4xl mx-auto w-full px-4 py-8">
+      <main className="flex-1 w-full max-w-4xl px-4 py-8 mx-auto">
         {apiKeyError && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3 text-red-700">
-            <AlertCircle className="w-5 h-5 flex-shrink-0" />
+          <div className="flex items-center gap-3 p-4 mb-6 text-red-700 border border-red-200 rounded-lg bg-red-50">
+            <AlertCircle className="flex-shrink-0 w-5 h-5" />
             <div>
               <p className="font-medium">API Key Not Configured</p>
-              <p className="text-sm mt-1">Please add your Gemini API key to the .env file to use this application.</p>
+              <p className="mt-1 text-sm">Please add your Gemini API key to the .env file to use this application.</p>
             </div>
           </div>
         )}
 
         <div className="grid grid-cols-1 gap-8">
           {messages.length === 0 && !packingList && (
-            <div className="bg-blue-50 border border-blue-100 rounded-lg p-6 text-center">
-              <div className="inline-block p-3 bg-blue-100 rounded-full mb-4">
+            <div className="p-6 text-center border border-blue-100 rounded-lg bg-blue-50">
+              <div className="inline-block p-3 mb-4 bg-blue-100 rounded-full">
                 <Plane className="w-6 h-6 text-blue-500" />
               </div>
-              <h2 className="text-xl font-semibold text-gray-900 mb-2">Ready to start packing?</h2>
+              <h2 className="mb-2 text-xl font-semibold text-gray-900">Ready to start packing?</h2>
               <p className="text-gray-600">
                 Describe your trip below and I'll help you create the perfect packing list.
               </p>
             </div>
           )}
 
-          <div className="bg-white rounded-xl shadow-md border border-gray-100">
+          <div className="bg-white border border-gray-100 shadow-md rounded-xl">
             <div ref={chatContainerRef} className="space-y-4 p-4 max-h-[400px] overflow-y-auto">
               {messages.map((message, index) => (
                 <ChatMessage key={index} message={message} />
